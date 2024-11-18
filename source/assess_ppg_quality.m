@@ -1,0 +1,260 @@
+function qual = assess_ppg_quality(ppg, fs, options)
+% ASSESS_PPG_QUALITY  Assess quality of a PPG signal.
+%   ASSESS_PPG_QUALITY assesses the quality a photoplethysmogram (PPG) signal
+%   using a specified quality assessment algorithm.
+%   
+%   # Inputs
+%   
+%   * ppg : a vector of PPG values
+%   * fs : the sampling frequency of the PPG in Hz
+%    
+%   * quality_algorithm  - a string specifying the quality assessment 
+%   algorithm to be used, or a cell specifying multiple quality assessment
+%   algorithms
+%
+%   * do_timing - a logical indicating whether or not to time how long it takes to run the beat detector algorithm
+%   
+%   # Outputs
+%   * onsets : indices of pulse onsets
+%   * qual : quality assessment results
+%   * t_taken : time taken (in secs) to run the beat detector algorithm
+%   
+%   # Documentation
+%   <https://ppg-beats.readthedocs.io/>
+%   
+%   # Author
+%   Peter H. Charlton, University of Cambridge, 2024.
+%   
+%   # MIT License
+%      Copyright (c) 2024 Peter H. Charlton
+%      Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+%      The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+%      THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+
+% Calculates the following metrics of photoplethysmogram (PPG) signal
+% quality:
+% - Signal-to-noise ratio (SNR)
+% - AC:DC ratio (and AC and DC amplitudes)
+% - template-matching correlation coefficient
+% - dynamic time warping template-matching
+% - skewness
+% - (needs updating)
+%
+% Inputs:
+% - ppg: vector of PPG signal samples
+% - fs: sampling frequency (Hz)
+% - options: ...
+
+%%%%%%%%%% TO-DO %%%%%%%%%%%%%
+% Need to implement a windowing step (currently it calculates a template for the whole window, and really this should be done on 10 sec windows or similar)
+% NOTE: generally includes all the metrics which are applicable to non-absolute ppg signals from https://doi.org/10.3390/s22155831 https://doi.org/10.1109/TBME.2022.3158582 (except wavelet and HRV ones), and https://doi.org/10.3390/bioengineering3040021
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%% Setup
+
+% Setup universal parameters
+if nargin<3, options = struct; end
+up = setup_up(fs, options);
+
+% Create signal structure
+sig.v = ppg;
+sig.fs = fs;
+
+%% Pre-process
+
+% perform each required preprocessing step
+for step_no = 1 : length(up.preprocessing_steps_to_perform.all)
+    curr_step = up.preprocessing_steps_to_perform.all{step_no};
+    % perform this step
+    switch curr_step
+        case 'beat_detection'
+            beats = perform_beat_detection(sig_beats_bpf, up.settings.beat_detector);
+        case 'beats_bpf'
+            sig_beats_bpf = perform_bpf(sig, up.pk_detect_bpf);
+        case 'snr_bpf'
+            sig_snr_bpf = perform_bpf(sig, up.snr_bpf);
+        case 'med_ibi'
+            med_ibi = perform_med_ibi(beats);
+
+    end
+    
+end
+
+%% Calculate signal quality metrics
+
+% go through each available quality metric
+for metric_no = 1 : length(up.settings.quality_metrics)
+    curr_metric = up.settings.quality_metrics{metric_no};
+    % calculate this metric
+    switch curr_metric
+        % snr
+        case 'snr'
+            qual.snr = calc_snr(sig_snr_bpf);
+        % ac:dc ratio
+        case 'amp_ac_dc'
+            [qual.ac_amp, qual.dc_amp, qual.ac_dc_ratio] = calc_amp_ac_dc(sig_beats_bpf, beats);
+        % signal similarity
+        case 'sig_sim'
+            qual.sig_sim = calc_sig_sim(sig_beats_bpf, beats);
+        % template matching correlation coefficient
+        case 'tm_cc'
+            qual.tm_cc = calc_tm_cc(sig, beats, med_ibi);
+        % dynamic time warping
+        case 'dtw'
+            [qual.dtw_ed_on, qual.dtw_dis_on, qual.dtw_ed_pk, qual.dtw_dis_pk] = ...
+                calc_dtw(sig, beats, med_ibi);
+        % statistical measures of quality
+        case 'stats_metrics'
+            [qual.skewness, qual.kurtosis, qual.entropy] = calc_stats_metrics(sig);
+        % pulse wave morphology measures of quality
+        case 'morph_metrics'
+            [qual.zcr, qual.firstderiv_zcr, qual.neg_neg_pk_jump, qual.pos_pos_pk_jump, qual.beat_amp_jump, qual.pulse_durn, qual.med_z_pulse, qual.npeaks_per_pw] = calc_morph_metrics(sig_snr_bpf, beats);
+        % frequency spectrum measures of quality
+        case 'spectrum_metrics'
+            [qual.rel_power] = calc_spectrum_metrics(sig);
+
+    end
+
+end
+
+end
+
+function up = setup_up(fs, options)
+
+%% Analysis settings
+
+% specify settings (as optionally specified in the 'options' input)
+option_vars = {'beat_detector', 'quality_metrics'};
+for option_var_no = 1 : length(option_vars)
+    curr_option = option_vars{option_var_no};
+
+    % - identify this option's setting
+    if sum(strcmp(fieldnames(options), curr_option))
+        % take provided setting for this option
+        eval(['curr_option_val = options.' curr_option ';']);
+    else
+        % use default setting for this option
+        switch curr_option
+            % - beat detector
+            case 'beat_detector'
+                curr_option_val = 'MSPTD';
+            % - quality assessment algorithm(s)
+            case 'quality_metrics'
+                curr_option_val = {'snr', 'amp_ac_dc', 'sig_sim', 'tm_cc', 'dtw', 'stats_metrics', 'morph_metrics', 'spectrum_metrics'};
+        end
+    end
+    
+    % - store this option's setting
+    eval(['up.settings.' curr_option ' = curr_option_val;'])
+
+end
+
+up.preprocessing_steps_to_perform.all = {};
+for quality_metric_no = 1 : length(up.settings.quality_metrics)
+    
+    curr_quality_metric = up.settings.quality_metrics{quality_metric_no};
+
+    % identify pre-processing step(s) for this quality_metric
+    switch curr_quality_metric
+        % - beat detector
+        case 'amp_ac_dc'
+            curr_pre_proc_steps = {'beats_bpf'; 'beat_detection'};
+        case 'snr'
+            curr_pre_proc_steps = {'snr_bpf'};
+        case 'sig_sim'
+            curr_pre_proc_steps = {'beats_bpf'; 'beat_detection'};
+        case 'tm_cc'
+            curr_pre_proc_steps = {'beat_detection'; 'med_ibi'};
+        case 'dtw'
+            curr_pre_proc_steps = {'beat_detection'; 'med_ibi'};
+        case 'stats_metrics'
+            curr_pre_proc_steps = {};
+        case 'morph_metrics'
+            curr_pre_proc_steps = {'snr_bpf'; 'beat_detection'};
+        case 'spectrum_metrics'
+            curr_pre_proc_steps = {};
+    end
+
+    % - store the preprocessing step(s) for this option
+    eval(['up.preprocessing_steps_to_perform.' curr_quality_metric ' = curr_pre_proc_steps;'])
+    up.preprocessing_steps_to_perform.all = [up.preprocessing_steps_to_perform.all; curr_pre_proc_steps];
+
+end
+
+% remove duplicates
+up.preprocessing_steps_to_perform.all = unique(up.preprocessing_steps_to_perform.all);
+
+% re-order to move those steps that require other steps to the end
+up.preprocessing_steps_to_perform.all = move_preprocess_step_to_end(up.preprocessing_steps_to_perform.all, 'beat_detection');
+up.preprocessing_steps_to_perform.all = move_preprocess_step_to_end(up.preprocessing_steps_to_perform.all, 'med_ibi');
+
+%% Design filters
+
+% Design a high-pass Butterworth filter
+if sum(strcmp(up.preprocessing_steps_to_perform.all, 'hpf'))
+    up.hpf.order = 4; % Choose the filter order (adjust as needed)
+    cutoff_frequency = 0.5; % Cutoff frequency in Hz
+    [up.hpf.b, up.hpf.a] = butter(up.hpf.order, cutoff_frequency/(fs/2), 'high');
+end
+
+% Design a band-pass Butterworth filter
+if sum(strcmp(up.preprocessing_steps_to_perform.all, 'beats_bpf'))
+    up.pk_detect_bpf.order = 4;
+    Nyquist = fs / 2; % Nyquist frequency
+    low_freq = 0.5; % Lower cutoff frequency in Hz
+    high_freq = 8; % Upper cutoff frequency in Hz
+    Wn = [low_freq, high_freq] / Nyquist; % Normalize the frequencies by the Nyquist frequency
+    [up.pk_detect_bpf.b, up.pk_detect_bpf.a] = butter(up.pk_detect_bpf.order, Wn, 'bandpass'); % Design the Butterworth bandpass filter
+end
+
+% Design a band-pass Chebyshev filter
+if sum(strcmp(up.preprocessing_steps_to_perform.all, 'snr_bpf'))
+    up.snr_bpf.order = 4;
+    Nyquist = fs / 2; % Nyquist frequency
+    low_freq = 0.5; % Lower cutoff frequency in Hz
+    high_freq = 12; % Upper cutoff frequency in Hz
+    Wn = [low_freq, high_freq] / Nyquist; % Normalize the frequencies by the Nyquist frequency
+    [up.snr_bpf.b, up.snr_bpf.a] = cheby2(up.snr_bpf.order, 20, Wn); % Design the Chebyshev II bandpass filter
+end
+
+% Design a band-pass Butterworth filter (resp)
+if sum(strcmp(up.preprocessing_steps_to_perform.all, 'resp_bpf'))
+    up.resp_bpf.order = 4;
+    Nyquist = fs / 2; % Nyquist frequency
+    low_freq = (4/60); % Lower cutoff frequency in Hz
+    high_freq = (45/60); % Upper cutoff frequency in Hz
+    Wn = [low_freq, high_freq] / Nyquist; % Normalize the frequencies by the Nyquist frequency
+    [up.resp_bpf.b, up.resp_bpf.a] = butter(up.resp_bpf.order, Wn, 'bandpass'); % Design the Butterworth bandpass filter
+end
+
+end
+
+function preprocessing_steps = move_preprocess_step_to_end(preprocessing_steps, preprocessing_step_to_move)
+
+rel_el = find(strcmp(preprocessing_steps, preprocessing_step_to_move));
+if ~isempty(rel_el)
+    preprocessing_steps(end+1) = preprocessing_steps(rel_el);
+    preprocessing_steps(rel_el) = [];
+end
+
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
