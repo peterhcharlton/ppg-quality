@@ -1,15 +1,25 @@
-function filtered_sig = perform_bpf(sig, bpf_coeffs)% PERFORM_BPF  Band-pass filters a signal.
-%   PERFORM_BPF band-pass filters a signal using a set of filter coefficients.
+function [ac_amp, dc_amp, ac_dc_ratio] = calc_amp_metrics(sig, beats)% CALC_AMP_METRICS  Calculates amplitude quality metrics.
+%   CALC_AMP_METRICS calculates the amplitudes of AC and DC components of a PPG signal, and their ratio.
 %   
 %   # Inputs
 %   
-%   * sig : a structure containing the input signal with fields:
+%   * sig : a structure containing the PPG signal with fields:
 %    - v : a vector of signal values
 %    - fs : the sampling frequency in Hz
-%   
+%
+%   * beats : a structure containing the indices of beat peaks, onsets, and mid-amplitude points:
+%    - peaks : indices of peaks
+%    - onsets : indices of onsets
+%    - mid_amps : indices of mid_amps
+%
 %   # Outputs
 %   
-%   * filtered_sig : a similar structure containing the filtered signal
+%   * ac_amp : amplitude of the AC component
+%   * dc_amp : amplitude of the DC component
+%   * ac_dc_ratio : the AC:DC ratio
+%
+%   # Usage
+%   The 'ppg-beats' toolbox can be used to obtain indices of detected beats: <https://ppg-beats.readthedocs.io/>
 %   
 %   # Documentation
 %   <https://ppg-quality.readthedocs.io/>
@@ -24,7 +34,8 @@ function filtered_sig = perform_bpf(sig, bpf_coeffs)% PERFORM_BPF  Band-pass fil
 %      THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
-filtered_sig.v = filtfilt(bpf_coeffs.b, bpf_coeffs.a, sig.v);
-filtered_sig.fs = sig.fs;
+ac_amp = median(sig.v(beats.peaks)-sig.v(beats.onsets));
+dc_amp = median((sig.v(beats.mid_amps)));
+ac_dc_ratio = 100*ac_amp./abs(dc_amp);
 
 end

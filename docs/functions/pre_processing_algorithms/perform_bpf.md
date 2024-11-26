@@ -1,32 +1,12 @@
-# `ASSESS_PPG_QUALITY` - Assess quality of a PPG signal.
-ASSESS_PPG_QUALITY assesses the quality a photoplethysmogram (PPG) signal
-using a specified quality assessment algorithm.
-
+# `PERFORM_BPF` - band-pass filters a signal using a set of filter coefficients.
 ##  Inputs
-+   ppg : a vector of PPG values
++   sig : a structure containing the input signal with fields:
     
-+   fs : the sampling frequency of the PPG in Hz
-    
-+   options : a stucture of options (as detailed below)
-    
-##  Options
-+   beat_detector : a string specifying the beat detector algorithm to be used (default is MPSTD)
-    
-+   quality_metrics  - a string specifying the quality assessment algorithm to be used, or a cell specifying multiple quality assessment algorithms. Options are:
-    
-     - 'snr' : signal-to-noise ratio (after filtering the signal from 0.5-12 Hz)
-     - 'amp_metrics' : amplitude metrics (AC amplitude, DC amplitude, and AC:DC ratio)
-     - 'sig_sim' : signal similarity metric
-     - 'tm_cc' : template-matching correlation coefficient
-     - 'dtw' : dynamic time-warping template-matching
-     - 'stats_metrics' : statistical metrics
-     - 'morph_metrics' : pulse wave morphology metrics
-     - 'spectrum_metrics' : power spectrum metrics
+     - v : a vector of signal values
+     - fs : the sampling frequency in Hz
     
 ##  Outputs
-+   onsets : indices of pulse onsets
-    
-+   qual : quality assessment results
++   filtered_sig : a similar structure containing the filtered signal
     
 ##  Documentation
 <https://ppg-quality.readthedocs.io/>

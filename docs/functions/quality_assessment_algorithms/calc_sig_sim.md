@@ -1,33 +1,23 @@
-# `ASSESS_PPG_QUALITY` - Assess quality of a PPG signal.
-ASSESS_PPG_QUALITY assesses the quality a photoplethysmogram (PPG) signal
-using a specified quality assessment algorithm.
-
+# `CALC_SIG_SIM` - calculates the signal similarity between consecutive pulse waves.
 ##  Inputs
-+   ppg : a vector of PPG values
++   sig : a structure containing the PPG signal with fields:
     
-+   fs : the sampling frequency of the PPG in Hz
+     - v : a vector of signal values
+     - fs : the sampling frequency in Hz
     
-+   options : a stucture of options (as detailed below)
++   beats : a structure containing the indices of beat onsets:
     
-##  Options
-+   beat_detector : a string specifying the beat detector algorithm to be used (default is MPSTD)
-    
-+   quality_metrics  - a string specifying the quality assessment algorithm to be used, or a cell specifying multiple quality assessment algorithms. Options are:
-    
-     - 'snr' : signal-to-noise ratio (after filtering the signal from 0.5-12 Hz)
-     - 'amp_metrics' : amplitude metrics (AC amplitude, DC amplitude, and AC:DC ratio)
-     - 'sig_sim' : signal similarity metric
-     - 'tm_cc' : template-matching correlation coefficient
-     - 'dtw' : dynamic time-warping template-matching
-     - 'stats_metrics' : statistical metrics
-     - 'morph_metrics' : pulse wave morphology metrics
-     - 'spectrum_metrics' : power spectrum metrics
+     - onsets : indices of onsets
     
 ##  Outputs
-+   onsets : indices of pulse onsets
++   sig_sim : the signal similarity for each pulse wave specified by the onset indices.
     
-+   qual : quality assessment results
-    
+##  Usage
+The 'ppg-beats' toolbox can be used to obtain indices of detected beats: <https://ppg-beats.readthedocs.io/>
+
+##  Reference
+D. G. Jang et al., 'A Simple and Robust Method for Determining the Quality of Cardiovascular Signals Using the Signal Similarity,' in Proc IEEE EMBC, 2018, 478–481. <https://doi.org/10.1109/EMBC.2018.8512341>
+
 ##  Documentation
 <https://ppg-quality.readthedocs.io/>
 

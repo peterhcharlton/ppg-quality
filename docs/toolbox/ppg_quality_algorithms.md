@@ -12,9 +12,11 @@ Algorithms to assess the quality of photoplethysmogram (PPG) signals.
 
 ## Automatic Beat Detection
 
-**Original publication:** Aboy M et al., An automatic beat detection algorithm for pressure signals. _IEEE Trans Biomed Eng_ 2005; 52: 1662-70. DOI: [10.1109/TBME.2005.855725](https://doi.org/10.1109/TBME.2005.855725)
+**Original publication:** 
 
-**Description:** The PPG is strongly filtered to retain frequencies around an initial heart rate estimate, differentiated, and peaks are detected above the 75th percentile. Beats are identified as peaks in a weakly filtered PPG immediately following each peak identified in the differentiated signal.
+Jang DG et al., A Simple and Robust Method for Determining the Quality of Cardiovascular Signals Using the Signal Similarity, _in Proc IEEE EMBC_, 2018, 478–481. DOI: [10.1109/EMBC.2018.8512341](https://doi.org/10.1109/EMBC.2018.8512341).
+
+**Description:** The signal similarity is the correlation between the current pulse wave's shape and the previous pulse wave's shape. Before calculation, pulse waves are interpolated to a constant number of samples to account for handle pulse wave duration.
 
 **Link:** [abd_beat_detector](../../functions/abd_beat_detector)
 

@@ -1,33 +1,26 @@
-# `ASSESS_PPG_QUALITY` - Assess quality of a PPG signal.
-ASSESS_PPG_QUALITY assesses the quality a photoplethysmogram (PPG) signal
-using a specified quality assessment algorithm.
-
+# `CALC_AMP_METRICS` - calculates the amplitudes of AC and DC components of a PPG signal, and their ratio.
 ##  Inputs
-+   ppg : a vector of PPG values
++   sig : a structure containing the PPG signal with fields:
     
-+   fs : the sampling frequency of the PPG in Hz
+     - v : a vector of signal values
+     - fs : the sampling frequency in Hz
     
-+   options : a stucture of options (as detailed below)
++   beats : a structure containing the indices of beat peaks, onsets, and mid-amplitude points:
     
-##  Options
-+   beat_detector : a string specifying the beat detector algorithm to be used (default is MPSTD)
-    
-+   quality_metrics  - a string specifying the quality assessment algorithm to be used, or a cell specifying multiple quality assessment algorithms. Options are:
-    
-     - 'snr' : signal-to-noise ratio (after filtering the signal from 0.5-12 Hz)
-     - 'amp_metrics' : amplitude metrics (AC amplitude, DC amplitude, and AC:DC ratio)
-     - 'sig_sim' : signal similarity metric
-     - 'tm_cc' : template-matching correlation coefficient
-     - 'dtw' : dynamic time-warping template-matching
-     - 'stats_metrics' : statistical metrics
-     - 'morph_metrics' : pulse wave morphology metrics
-     - 'spectrum_metrics' : power spectrum metrics
+     - peaks : indices of peaks
+     - onsets : indices of onsets
+     - mid_amps : indices of mid_amps
     
 ##  Outputs
-+   onsets : indices of pulse onsets
++   ac_amp : amplitude of the AC component
     
-+   qual : quality assessment results
++   dc_amp : amplitude of the DC component
     
++   ac_dc_ratio : the AC:DC ratio
+    
+##  Usage
+The 'ppg-beats' toolbox can be used to obtain indices of detected beats: <https://ppg-beats.readthedocs.io/>
+
 ##  Documentation
 <https://ppg-quality.readthedocs.io/>
 

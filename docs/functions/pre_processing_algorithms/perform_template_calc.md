@@ -1,32 +1,23 @@
-# `ASSESS_PPG_QUALITY` - Assess quality of a PPG signal.
-ASSESS_PPG_QUALITY assesses the quality a photoplethysmogram (PPG) signal
-using a specified quality assessment algorithm.
-
+# `PERFORM_TEMPLATE_CALC` - obtains a template photoplethysmogram (PPG) pulse wave.
 ##  Inputs
-+   ppg : a vector of PPG values
++   sig : a structure containing a PPG signal with fields:
     
-+   fs : the sampling frequency of the PPG in Hz
+     - v : a vector of PPG values
+     - fs : the sampling frequency of the PPG in Hz
++   beat_inds : a vector containing indices of PPG beats
     
-+   options : a stucture of options (as detailed below)
++   med_ibi : the median inter-beat interval (in samples)
     
-##  Options
-+   beat_detector : a string specifying the beat detector algorithm to be used (default is MPSTD)
-    
-+   quality_metrics  - a string specifying the quality assessment algorithm to be used, or a cell specifying multiple quality assessment algorithms. Options are:
-    
-     - 'snr' : signal-to-noise ratio (after filtering the signal from 0.5-12 Hz)
-     - 'amp_metrics' : amplitude metrics (AC amplitude, DC amplitude, and AC:DC ratio)
-     - 'sig_sim' : signal similarity metric
-     - 'tm_cc' : template-matching correlation coefficient
-     - 'dtw' : dynamic time-warping template-matching
-     - 'stats_metrics' : statistical metrics
-     - 'morph_metrics' : pulse wave morphology metrics
-     - 'spectrum_metrics' : power spectrum metrics
++   do_distance_measures : a logical indicating whether or not to calculate the distance measures between each pulse wave and the template.
     
 ##  Outputs
-+   onsets : indices of pulse onsets
++   templ : a vector containing a template pulse wave (at the original fs)
     
-+   qual : quality assessment results
++   cc : mean correlation coefficient between individual pulse waves and the template
+    
++   ed : Euclidean distance between individual pulse waves and the template
+    
++   dis : Disimilarity between individual pulse waves and the template
     
 ##  Documentation
 <https://ppg-quality.readthedocs.io/>

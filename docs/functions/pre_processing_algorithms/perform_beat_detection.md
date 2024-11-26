@@ -1,33 +1,16 @@
-# `ASSESS_PPG_QUALITY` - Assess quality of a PPG signal.
-ASSESS_PPG_QUALITY assesses the quality a photoplethysmogram (PPG) signal
-using a specified quality assessment algorithm.
+# `PERFORM_BEAT_DETECTION` - detects beats in a photoplethysmogram (PPG) signal
+using a specified beat detection algorithm.
 
 ##  Inputs
-+   ppg : a vector of PPG values
++   sig : a structure containing a PPG signal with fields:
     
-+   fs : the sampling frequency of the PPG in Hz
+     - v : a vector of PPG values
+     - fs : the sampling frequency of the PPG in Hz
++   beat_detector : the abbreviation name of a beat detector (e.g. 'MSPTD')
     
-+   options : a stucture of options (as detailed below)
-    
-##  Options
-+   beat_detector : a string specifying the beat detector algorithm to be used (default is MPSTD)
-    
-+   quality_metrics  - a string specifying the quality assessment algorithm to be used, or a cell specifying multiple quality assessment algorithms. Options are:
-    
-     - 'snr' : signal-to-noise ratio (after filtering the signal from 0.5-12 Hz)
-     - 'amp_metrics' : amplitude metrics (AC amplitude, DC amplitude, and AC:DC ratio)
-     - 'sig_sim' : signal similarity metric
-     - 'tm_cc' : template-matching correlation coefficient
-     - 'dtw' : dynamic time-warping template-matching
-     - 'stats_metrics' : statistical metrics
-     - 'morph_metrics' : pulse wave morphology metrics
-     - 'spectrum_metrics' : power spectrum metrics
-    
-##  Outputs
-+   onsets : indices of pulse onsets
-    
-+   qual : quality assessment results
-    
+##  Pre-requisites
+This function uses the 'ppg-beats' toolbox, which is available here: <https://ppg-beats.readthedocs.io/>
+
 ##  Documentation
 <https://ppg-quality.readthedocs.io/>
 

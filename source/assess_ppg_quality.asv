@@ -1,4 +1,4 @@
-function qual = assess_ppg_quality(ppg, fs, options)
+function [qual, onsets] = assess_ppg_quality(ppg, fs, options)
 % ASSESS_PPG_QUALITY  Assess quality of a PPG signal.
 %   ASSESS_PPG_QUALITY assesses the quality a photoplethysmogram (PPG) signal
 %   using a specified quality assessment algorithm.
@@ -7,20 +7,28 @@ function qual = assess_ppg_quality(ppg, fs, options)
 %   
 %   * ppg : a vector of PPG values
 %   * fs : the sampling frequency of the PPG in Hz
-%    
-%   * quality_algorithm  - a string specifying the quality assessment 
-%   algorithm to be used, or a cell specifying multiple quality assessment
-%   algorithms
+%   * options : a stucture of options (as detailed below)
 %
-%   * do_timing - a logical indicating whether or not to time how long it takes to run the beat detector algorithm
+%   # Options
+%
+%   * beat_detector
+%    
+%   * quality_metrics  - a string specifying the quality assessment algorithm to be used, or a cell specifying multiple quality assessment algorithms. Options are:
+%    - 'snr' : signal-to-noise ratio (after filtering the signal from 0.5-12 Hz)
+%    - 'amp_metrics' : amplitude metrics (AC amplitude, DC amplitude, and AC:DC ratio)
+%    - 'sig_sim' : signal similarity metric
+%    - 'tm_cc' : template-matching correlation coefficient
+%    - 'dtw' : dynamic time-warping template-matching
+%    - 'stats_metrics' : statistical metrics
+%    - 'morph_metrics' : pulse wave morphology metrics
+%    - 'spectrum_metrics' : power spectrum metrics
 %   
 %   # Outputs
 %   * onsets : indices of pulse onsets
 %   * qual : quality assessment results
-%   * t_taken : time taken (in secs) to run the beat detector algorithm
 %   
 %   # Documentation
-%   <https://ppg-beats.readthedocs.io/>
+%   <https://ppg-quality.readthedocs.io/>
 %   
 %   # Author
 %   Peter H. Charlton, University of Cambridge, 2024.
@@ -31,24 +39,9 @@ function qual = assess_ppg_quality(ppg, fs, options)
 %      The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 %      THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-
-
-% Calculates the following metrics of photoplethysmogram (PPG) signal
-% quality:
-% - Signal-to-noise ratio (SNR)
-% - AC:DC ratio (and AC and DC amplitudes)
-% - template-matching correlation coefficient
-% - dynamic time warping template-matching
-% - skewness
-% - (needs updating)
-%
-% Inputs:
-% - ppg: vector of PPG signal samples
-% - fs: sampling frequency (Hz)
-% - options: ...
-
 %%%%%%%%%% TO-DO %%%%%%%%%%%%%
 % Need to implement a windowing step (currently it calculates a template for the whole window, and really this should be done on 10 sec windows or similar)
+% Need to decide whether to output values for each beat or aggregate values
 % NOTE: generally includes all the metrics which are applicable to non-absolute ppg signals from https://doi.org/10.3390/s22155831 https://doi.org/10.1109/TBME.2022.3158582 (except wavelet and HRV ones), and https://doi.org/10.3390/bioengineering3040021
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -77,10 +70,14 @@ for step_no = 1 : length(up.preprocessing_steps_to_perform.all)
         case 'snr_bpf'
             sig_snr_bpf = perform_bpf(sig, up.snr_bpf);
         case 'med_ibi'
-            med_ibi = perform_med_ibi(beats);
-
+            med_ibi = perform_med_ibi(beats.mid_amps);
     end
-    
+end
+% output 'onsets' when available
+if exist('beats', 'var')
+    onsets = beats.onsets;
+else
+    onsets = [];
 end
 
 %% Calculate signal quality metrics
@@ -94,46 +91,33 @@ for metric_no = 1 : length(up.settings.quality_metrics)
         case 'snr'
             qual.snr = calc_snr(sig_snr_bpf);
         % ac:dc ratio
-        case 'amp_ac_dc'
-            [qual.ac_amp, qual.dc_amp, qual.ac_dc_ratio] = calc_amp_ac_dc(sig_beats_bpf, beats);
+        case 'amp_metrics'
+            [qual.ac_amp, qual.dc_amp, qual.ac_dc_ratio] = calc_amp_metrics(sig_beats_bpf, beats);
         % signal similarity
         case 'sig_sim'
             qual.sig_sim = calc_sig_sim(sig_beats_bpf, beats);
         % template matching correlation coefficient
         case 'tm_cc'
             qual.tm_cc = calc_tm_cc(sig, beats, med_ibi);
-        % dynamic tim
+        % dynamic time warping
         case 'dtw'
             [qual.dtw_ed_on, qual.dtw_dis_on, qual.dtw_ed_pk, qual.dtw_dis_pk] = ...
                 calc_dtw(sig, beats, med_ibi);
+        % statistical measures of quality
         case 'stats_metrics'
-            [qual.skewness, qual.kurtosis, qual.entropy] = find_statistical_metrics(sig, up);
-
+            [qual.skewness, qual.kurtosis, qual.entropy] = calc_stats_metrics(sig);
+        % pulse wave morphology measures of quality
+        case 'morph_metrics'
+            [qual.zcr, qual.firstderiv_zcr, qual.neg_neg_pk_jump, qual.pos_pos_pk_jump, qual.beat_amp_jump, qual.pulse_durn, qual.med_z_pulse, qual.npeaks_per_pw] = calc_morph_metrics(sig_snr_bpf, beats);
+        % frequency spectrum measures of quality
+        case 'spectrum_metrics'
+            [qual.rel_power] = calc_spectrum_metrics(sig);
     end
-
 end
-
-%% Filter signal
-sig_filtered = filter_sig(sig, up);
-
-%% statistical measures
-
-
-%% pulse wave morphology measures
-[qual.zcr, qual.firstderiv_zcr, qual.neg_neg_pk_jump, qual.pos_pos_pk_jump, qual.beat_amp_jump, qual.pulse_durn, qual.med_z_pulse, qual.npeaks_per_pw] = find_morphology_metrics(sig_filtered.v, sig_filtered.fs, beats, up);
-
-%% frequency spectrum measures
-[qual.rel_power] = find_spectrum_measures(sig.v, sig.fs, up);
 
 end
 
 function up = setup_up(fs, options)
-
-%% Operational settings
-
-% state the constant settings
-% - available quality metrics
-up.avail_quality_metrics = {'snr', 'amp_ac_dc', 'sig_sim', 'tm_cc', 'dtw', 'stats_metrics'};
 
 %% Analysis settings
 
@@ -154,7 +138,7 @@ for option_var_no = 1 : length(option_vars)
                 curr_option_val = 'MSPTD';
             % - quality assessment algorithm(s)
             case 'quality_metrics'
-                curr_option_val = up.avail_quality_metrics;
+                curr_option_val = {'snr', 'amp_metrics', 'sig_sim', 'tm_cc', 'dtw', 'stats_metrics', 'morph_metrics', 'spectrum_metrics'};
         end
     end
     
@@ -163,6 +147,12 @@ for option_var_no = 1 : length(option_vars)
 
 end
 
+% check that the quality metric(s) is a cell
+if isstr(up.settings.quality_metrics)
+    up.settings.quality_metrics = {isstr(up.settings.quality_metrics)};
+end
+
+% identify required pre-processing steps
 up.preprocessing_steps_to_perform.all = {};
 for quality_metric_no = 1 : length(up.settings.quality_metrics)
     
@@ -171,7 +161,7 @@ for quality_metric_no = 1 : length(up.settings.quality_metrics)
     % identify pre-processing step(s) for this quality_metric
     switch curr_quality_metric
         % - beat detector
-        case 'amp_ac_dc'
+        case 'amp_metrics'
             curr_pre_proc_steps = {'beats_bpf'; 'beat_detection'};
         case 'snr'
             curr_pre_proc_steps = {'snr_bpf'};
@@ -183,6 +173,10 @@ for quality_metric_no = 1 : length(up.settings.quality_metrics)
             curr_pre_proc_steps = {'beat_detection'; 'med_ibi'};
         case 'stats_metrics'
             curr_pre_proc_steps = {};
+        case 'morph_metrics'
+            curr_pre_proc_steps = {'snr_bpf'; 'beat_detection'};
+        case 'spectrum_metrics'
+            curr_pre_proc_steps = {};
     end
 
     % - store the preprocessing step(s) for this option
@@ -191,7 +185,7 @@ for quality_metric_no = 1 : length(up.settings.quality_metrics)
 
 end
 
-% remove duplicates
+% remove duplicate pre-processing steps
 up.preprocessing_steps_to_perform.all = unique(up.preprocessing_steps_to_perform.all);
 
 % re-order to move those steps that require other steps to the end
@@ -248,169 +242,6 @@ if ~isempty(rel_el)
 end
 
 end
-
-function sig_filtered = filter_sig(sig, up)
-
-function [skewness, kurtosis, entropy] = find_statistical_metrics(sig, up)
-
-% setup
-x = sig.v;
-N = length(x);
-mu_x = mean(x);
-omega = std(x);
-
-% skewness
-% - Based on eqn (3) in: M. Elgendi, Optimal signal quality index for photoplethysmogram signals3, Bioengineering, vol. 3, no. 4, pp. 1–15, 2016, doi: 10.3390/bioengineering3040021.
-skewness = mean( ((x-mu_x)/omega).^3 );
-
-% kurtosis
-% - based on eqn (4) in: M. Elgendi, Optimal signal quality index for photoplethysmogram signals3, Bioengineering, vol. 3, no. 4, pp. 1–15, 2016, doi: 10.3390/bioengineering3040021.
-kurtosis = mean( ((x-mu_x)/omega).^4 );
-
-% entropy
-% - based on eqn (2) in: [1] N. Selvaraj, Y. Mendelson, K. H. Shelley, D. G. Silverman, and K. H. Chon, ‘Statistical approach for the detection of motion/noise artifacts in Photoplethysmogram’, in Proc IEEE EMBS, IEEE, 2011, pp. 4972–4975. doi: 10.1109/IEMBS.2011.6091232.
-% - inspired by: M. Elgendi, Optimal signal quality index for photoplethysmogram signals3, Bioengineering, vol. 3, no. 4, pp. 1–15, 2016, doi: 10.3390/bioengineering3040021.
-no_bins = 16; % from Section II.C.2. in: [1] N. Selvaraj, Y. Mendelson, K. H. Shelley, D. G. Silverman, and K. H. Chon, ;Statistical approach for the detection of motion/noise artifacts in Photoplethysmogram’, in Proc IEEE EMBS, IEEE, 2011, pp. 4972–4975. doi: 10.1109/IEMBS.2011.6091232.
-bin_lims = linspace(min(x),max(x),no_bins+1);
-bin_p = zeros(no_bins,1);
-for bin_no = 1 : no_bins
-    bin_p(bin_no) = sum(x>=bin_lims(bin_no) & x<bin_lims(bin_no+1))/no_bins;
-end
-bin_p(end) = bin_p(end)+sum(x==bin_lims(end));
-entropy = - sum( bin_p.*log(bin_p) ./ log(1/no_bins) );
-
-end
-
-function [zcr, firstderiv_zcr, neg_neg_pk_jump, pos_pos_pk_jump, beat_amp_jump, pulse_durn, med_z_pulse, npeaks_per_pw] = find_morphology_metrics(filtered_sig, fs, beats, up)
-
-% number of detected local maxima
-% - from Table 2 of: S. Moscato, S. Lo Giudice, G. Massaro, and L. Chiari, :Wrist photoplethysmography signal quality assessment for reliable heart rate estimate and morphological analysis’, Sensors, vol. 22, no. 15, p. 5831, 2022, doi: 10.3390/s22155831.
-% - perhaps slightly adapted to make it per pulse
-rel_filtered_sig = filtered_sig(beats.onsets(1):beats.onsets(end));
-no_local_max = sum(rel_filtered_sig(1:end-2)<rel_filtered_sig(2:end-1) & rel_filtered_sig(2:end-1)>rel_filtered_sig(3:end));  % doesn't account for a peak which spans multiple samples
-npeaks_per_pw = no_local_max/(length(beats.onsets)-1);
-
-% zero crossing rate
-% - inspired by eqn (6) in: M. Elgendi, Optimal signal quality index for photoplethysmogram signals3, Bioengineering, vol. 3, no. 4, pp. 1–15, 2016, doi: 10.3390/bioengineering3040021.
-% - the following code calculates what i think is the zero crossing rate, whereas I thought eqn (6) calculated the proportion of the signal which is less than zero 
-durn = (length(filtered_sig)-1)/fs;  % -1 to calculate number of intervals, rather than number of samples
-no_zc = sum( (filtered_sig(2:end)>0 & filtered_sig(1:end-1)<=0) | ...
-    (filtered_sig(2:end)<=0 & filtered_sig(1:end-1)>0) );
-zcr = no_zc/durn;
-
-% first derivative zero crossing rate
-% - from Table 2 of: S. Moscato, S. Lo Giudice, G. Massaro, and L. Chiari, :Wrist photoplethysmography signal quality assessment for reliable heart rate estimate and morphological analysis’, Sensors, vol. 22, no. 15, p. 5831, 2022, doi: 10.3390/s22155831.
-% - not sure whether it's an exact implementation
-% - haven't attempted to get a smooth first deriv, but using a filtered sig probably does this to some extent.
-first_deriv = diff(filtered_sig);
-durn = (length(first_deriv)-1)/fs;  % -1 to calculate number of intervals, rather than number of samples
-no_zc = sum( (first_deriv(2:end)>0 & first_deriv(1:end-1)<=0) | ...
-    (first_deriv(2:end)<=0 & first_deriv(1:end-1)>0) );
-firstderiv_zcr = no_zc/durn;
-
-% normalised negative-to-negative peak jump
-% - from Section 3.1.2.2 in: E. Sabeti, N. Reamaroon, M. Mathis, J. Gryak, M. Sjoding, and K. Najarian, ‘Signal quality measure for pulsatile physiological signals using morphological features: Applications in reliability measure for pulse oximetry’, Informatics in Medicine Unlocked, vol. 16, p. 100222, Jan. 2019, doi: 10.1016/j.imu.2019.100222.
-neg_peak_amps = filtered_sig(beats.onsets);
-pos_peak_amps = filtered_sig(beats.peaks);
-delta_Pneg_i = [nan; abs(diff(neg_peak_amps))];
-delta_Pneg = nanmean(delta_Pneg_i);
-P_i = abs(pos_peak_amps-neg_peak_amps);
-delta_P_i = [nan; abs(diff(P_i))];
-delta_P = nanmean(delta_P_i);
-neg_neg_pk_jump = ( delta_Pneg_i - delta_Pneg ) ./ delta_P;
-
-% normalised positive-to-positive peak jump
-% - from Section 3.1.2.3 in: E. Sabeti, N. Reamaroon, M. Mathis, J. Gryak, M. Sjoding, and K. Najarian, ‘Signal quality measure for pulsatile physiological signals using morphological features: Applications in reliability measure for pulse oximetry’, Informatics in Medicine Unlocked, vol. 16, p. 100222, Jan. 2019, doi: 10.1016/j.imu.2019.100222.
-delta_Ppos_i = [nan; abs(diff(pos_peak_amps))];
-delta_Ppos = nanmean(delta_Ppos_i);
-pos_pos_pk_jump = ( delta_Ppos_i - delta_Ppos ) ./ delta_P;
-
-% normalised peak amplitude jump
-% - from Section 3.1.2.4 in: E. Sabeti, N. Reamaroon, M. Mathis, J. Gryak, M. Sjoding, and K. Najarian, 4Signal quality measure for pulsatile physiological signals using morphological features: Applications in reliability measure for pulse oximetry’, Informatics in Medicine Unlocked, vol. 16, p. 100222, Jan. 2019, doi: 10.1016/j.imu.2019.100222.
-beat_amp_jump = ( delta_P_i - delta_P ) ./ delta_P;
-
-% normalised pulse duration
-% - from Section 3.1.2.1 in: E. Sabeti, N. Reamaroon, M. Mathis, J. Gryak, M. Sjoding, and K. Najarian, 4Signal quality measure for pulsatile physiological signals using morphological features: Applications in reliability measure for pulse oximetry’, Informatics in Medicine Unlocked, vol. 16, p. 100222, Jan. 2019, doi: 10.1016/j.imu.2019.100222.
-delta_p_i = [diff(beats.onsets);nan]./fs;
-delta_p = nanmean(delta_p_i);
-pulse_durn = (delta_p_i - delta_p ) ./ delta_p;
-
-% median value of the z-scored PPG pulse
-% - from Table 2 of: S. Moscato, S. Lo Giudice, G. Massaro, and L. Chiari, :Wrist photoplethysmography signal quality assessment for reliable heart rate estimate and morphological analysis’, Sensors, vol. 22, no. 15, p. 5831, 2022, doi: 10.3390/s22155831.
-med_z_pulse = nan(length(beats.onsets),1);
-for beat_no = 1 : length(beats.onsets)-1
-    pw = filtered_sig(beats.onsets(beat_no):beats.onsets(beat_no+1));
-    med_z_pulse(beat_no) = median((pw-mean(pw))./std(pw));
-end
-
-end
-
-function [rel_power] = find_spectrum_measures(sig, fs, up)
-
-ideal_downsample_freq = 30;
-downsample_factor = floor(fs/ideal_downsample_freq);
-downsample_freq = fs/downsample_factor;
-segLen_min = 6*downsample_freq;
-temp.v = decimate(sig, downsample_factor);
-temp.v = detrend(temp.v); temp.v = temp.v(:);
-
-% - Calculate Welch periodogram
-segLen = 2^nextpow2(segLen_min);
-noverlap = segLen/2;
-[w_periodogram.power, w_periodogram.freqs] = pwelch(temp.v,segLen,noverlap, [], downsample_freq);
-w_periodogram.power = w_periodogram.power./max(w_periodogram.power);
-
-% - plot periodogram
-do_plot = 0;
-if do_plot
-    ftsize = 16;
-    plot(w_periodogram.freqs, w_periodogram.power, 'b', 'LineWidth', 2), hold on
-    set(gca, 'YTick', [], 'FontSize', ftsize-4)
-    xlabel('Frequency (Hz)', 'FontSize', ftsize)
-    xlim([0 max(w_periodogram.freqs)])
-    ylim([0 max(w_periodogram.power)*1.1])
-    box off
-end
-
-% calculate rel power
-% - from eqn (9) in: M. Elgendi, Optimal signal quality index for photoplethysmogram signals3, Bioengineering, vol. 3, no. 4, pp. 1–15, 2016, doi: 10.3390/bioengineering3040021.
-rel_els_num = w_periodogram.freqs>= 1 & w_periodogram.freqs <= 2.25;
-rel_els_den = w_periodogram.freqs>= 0 & w_periodogram.freqs <= 8;
-rel_power = sum(w_periodogram.power(rel_els_num)) / sum(w_periodogram.power(rel_els_den));
-    
-end
-
-function sig_sim = find_sig_sim(sig, fs, beats, up)
-
-% calculates signal similarity, based on the approach in D.-G. Jang et al., ‘A Simple and Robust Method for Determining the Quality of Cardiovascular Signals Using the Signal Similarity’, in 2018 40th Annual International Conference of the IEEE Engineering in Medicine and Biology Society (EMBC), Jul. 2018, pp. 478–481. doi: 10.1109/EMBC.2018.8512341.
-
-no_samps = 50;
-sig_sim = nan(length(beats.onsets),1);
-for beat_no = 2 : length(beats.onsets)-1
-    target_pw = sig(beats.onsets(beat_no):beats.onsets(beat_no+1));
-    target_pw_resamp = interpolate_pw(target_pw, no_samps);
-    adjacent_pw = sig(beats.onsets(beat_no-1):beats.onsets(beat_no));
-    adjacent_pw_resamp = interpolate_pw(adjacent_pw, no_samps);
-    temp = corrcoef(target_pw_resamp, adjacent_pw_resamp);
-    cc = temp(1,2);
-    sig_sim(beat_no) = cc;
-end
-
-end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

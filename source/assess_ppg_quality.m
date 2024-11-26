@@ -1,4 +1,4 @@
-function qual = assess_ppg_quality(ppg, fs, options)
+function [qual, onsets] = assess_ppg_quality(ppg, fs, options)
 % ASSESS_PPG_QUALITY  Assess quality of a PPG signal.
 %   ASSESS_PPG_QUALITY assesses the quality a photoplethysmogram (PPG) signal
 %   using a specified quality assessment algorithm.
@@ -7,20 +7,28 @@ function qual = assess_ppg_quality(ppg, fs, options)
 %   
 %   * ppg : a vector of PPG values
 %   * fs : the sampling frequency of the PPG in Hz
-%    
-%   * quality_algorithm  - a string specifying the quality assessment 
-%   algorithm to be used, or a cell specifying multiple quality assessment
-%   algorithms
+%   * options : a stucture of options (as detailed below)
 %
-%   * do_timing - a logical indicating whether or not to time how long it takes to run the beat detector algorithm
+%   # Options
+%
+%   * beat_detector : a string specifying the beat detector algorithm to be used (default is MPSTD)
+%    
+%   * quality_metrics  - a string specifying the quality assessment algorithm to be used, or a cell specifying multiple quality assessment algorithms. Options are:
+%    - 'snr' : signal-to-noise ratio (after filtering the signal from 0.5-12 Hz)
+%    - 'amp_metrics' : amplitude metrics (AC amplitude, DC amplitude, and AC:DC ratio)
+%    - 'sig_sim' : signal similarity metric
+%    - 'tm_cc' : template-matching correlation coefficient
+%    - 'dtw' : dynamic time-warping template-matching
+%    - 'stats_metrics' : statistical metrics
+%    - 'morph_metrics' : pulse wave morphology metrics
+%    - 'spectrum_metrics' : power spectrum metrics
 %   
 %   # Outputs
 %   * onsets : indices of pulse onsets
 %   * qual : quality assessment results
-%   * t_taken : time taken (in secs) to run the beat detector algorithm
 %   
 %   # Documentation
-%   <https://ppg-beats.readthedocs.io/>
+%   <https://ppg-quality.readthedocs.io/>
 %   
 %   # Author
 %   Peter H. Charlton, University of Cambridge, 2024.
@@ -31,24 +39,9 @@ function qual = assess_ppg_quality(ppg, fs, options)
 %      The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 %      THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-
-
-% Calculates the following metrics of photoplethysmogram (PPG) signal
-% quality:
-% - Signal-to-noise ratio (SNR)
-% - AC:DC ratio (and AC and DC amplitudes)
-% - template-matching correlation coefficient
-% - dynamic time warping template-matching
-% - skewness
-% - (needs updating)
-%
-% Inputs:
-% - ppg: vector of PPG signal samples
-% - fs: sampling frequency (Hz)
-% - options: ...
-
 %%%%%%%%%% TO-DO %%%%%%%%%%%%%
 % Need to implement a windowing step (currently it calculates a template for the whole window, and really this should be done on 10 sec windows or similar)
+% Need to decide whether to output values for each beat or aggregate values
 % NOTE: generally includes all the metrics which are applicable to non-absolute ppg signals from https://doi.org/10.3390/s22155831 https://doi.org/10.1109/TBME.2022.3158582 (except wavelet and HRV ones), and https://doi.org/10.3390/bioengineering3040021
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -77,10 +70,14 @@ for step_no = 1 : length(up.preprocessing_steps_to_perform.all)
         case 'snr_bpf'
             sig_snr_bpf = perform_bpf(sig, up.snr_bpf);
         case 'med_ibi'
-            med_ibi = perform_med_ibi(beats);
-
+            med_ibi = perform_med_ibi(beats.mid_amps);
     end
-    
+end
+% output 'onsets' when available
+if exist('beats', 'var')
+    onsets = beats.onsets;
+else
+    onsets = [];
 end
 
 %% Calculate signal quality metrics
@@ -94,8 +91,8 @@ for metric_no = 1 : length(up.settings.quality_metrics)
         case 'snr'
             qual.snr = calc_snr(sig_snr_bpf);
         % ac:dc ratio
-        case 'amp_ac_dc'
-            [qual.ac_amp, qual.dc_amp, qual.ac_dc_ratio] = calc_amp_ac_dc(sig_beats_bpf, beats);
+        case 'amp_metrics'
+            [qual.ac_amp, qual.dc_amp, qual.ac_dc_ratio] = calc_amp_metrics(sig_beats_bpf, beats);
         % signal similarity
         case 'sig_sim'
             qual.sig_sim = calc_sig_sim(sig_beats_bpf, beats);
@@ -115,9 +112,7 @@ for metric_no = 1 : length(up.settings.quality_metrics)
         % frequency spectrum measures of quality
         case 'spectrum_metrics'
             [qual.rel_power] = calc_spectrum_metrics(sig);
-
     end
-
 end
 
 end
@@ -143,7 +138,7 @@ for option_var_no = 1 : length(option_vars)
                 curr_option_val = 'MSPTD';
             % - quality assessment algorithm(s)
             case 'quality_metrics'
-                curr_option_val = {'snr', 'amp_ac_dc', 'sig_sim', 'tm_cc', 'dtw', 'stats_metrics', 'morph_metrics', 'spectrum_metrics'};
+                curr_option_val = {'snr', 'amp_metrics', 'sig_sim', 'tm_cc', 'dtw', 'stats_metrics', 'morph_metrics', 'spectrum_metrics'};
         end
     end
     
@@ -152,6 +147,12 @@ for option_var_no = 1 : length(option_vars)
 
 end
 
+% check that the quality metric(s) is a cell
+if isstr(up.settings.quality_metrics)
+    up.settings.quality_metrics = {isstr(up.settings.quality_metrics)};
+end
+
+% identify required pre-processing steps
 up.preprocessing_steps_to_perform.all = {};
 for quality_metric_no = 1 : length(up.settings.quality_metrics)
     
@@ -160,7 +161,7 @@ for quality_metric_no = 1 : length(up.settings.quality_metrics)
     % identify pre-processing step(s) for this quality_metric
     switch curr_quality_metric
         % - beat detector
-        case 'amp_ac_dc'
+        case 'amp_metrics'
             curr_pre_proc_steps = {'beats_bpf'; 'beat_detection'};
         case 'snr'
             curr_pre_proc_steps = {'snr_bpf'};
@@ -184,7 +185,7 @@ for quality_metric_no = 1 : length(up.settings.quality_metrics)
 
 end
 
-% remove duplicates
+% remove duplicate pre-processing steps
 up.preprocessing_steps_to_perform.all = unique(up.preprocessing_steps_to_perform.all);
 
 % re-order to move those steps that require other steps to the end
@@ -241,20 +242,6 @@ if ~isempty(rel_el)
 end
 
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
