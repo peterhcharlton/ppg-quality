@@ -25,3 +25,8 @@ nav:
       - 'Summary': './tutorials/summary.md'
       - 'PPG Quality Assessment': './tutorials/ppg_quality_assessment.md'
       - 'Creating Documentation': './tutorials/creating_docs.md'
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences

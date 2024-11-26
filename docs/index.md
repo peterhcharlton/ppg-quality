@@ -2,6 +2,11 @@
 
 **PPG-quality** is a Matlab library of algorithms to assess the quality of photoplethysmogram (PPG) signals.
 
+!!! warning
+
+    This toolbox is currently under development, and is not yet complete. Nor have any checks been conducted.
+
+
 ## Background
 
 Photoplethysmography (PPG) sensors are the optical sensors which are now widely used for oxygen saturation and heart rate monitoring in clinical devices (such as pulse oximeters) and consumer devices (such as smartwatches). A wealth of information can be obtained from PPG signals, including heart rate, heart rhythm, and blood oxygen saturation. However, the PPG signal is susceptible to noise such as motion artifact. Therefore, a fundamental step when analysing the PPG signal is to assess its quality. Indeed, several approaches have been developed to assess the quality of PPG signals.
@@ -30,5 +35,5 @@ Further details of the project, including publications produced using this toolb
 ## Citation
 When using this toolbox, please cite:
 
-Charlton PH _et al._, [Detecting beats in the photoplethysmogram: benchmarking open-source algorithms](https://doi.org/10.1088/1361-6579/ac826d), Physiological Measurement, 2022.
+Charlton PH _et al._, [Determinants of photoplethysmography signal quality at the wrist](https://doi.org/10.36227/techrxiv.172954491.17588920/v1), TechRxiv, 2024.
 
