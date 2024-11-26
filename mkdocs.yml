@@ -1,0 +1,32 @@
+site_name: PPG-quality
+repo_url: https://github.com/peterhcharlton/ppg-quality
+edit_uri: ''
+site_description: PPG-quality, a Matlab library of algorithms to assess the quality of photoplethysmogram (PPG) signals
+site_author: Peter H Charlton
+copyright: Made available under the <a href = "https://creativecommons.org/licenses/by/4.0/">CC BY 4.0 license</a>
+
+nav:
+    - 'Home': 'index.md'
+    - 'Toolbox':
+      - 'Getting Started': './toolbox/getting_started.md'
+      - 'PPG Quality Algorithms': './toolbox/ppg_quality_algorithms.md'
+      - 'Contributing': './toolbox/contributing.md'
+      - 'Acknowledgments': './toolbox/acknowledgments.md'
+    - 'Functions':
+      - 'assess_ppg_quality': './functions/assess_ppg_quality.md'
+      - 'calc_amp_metrics': './functions/quality_assessment_algorithms/calc_amp_metrics.md'
+      - 'calc_dtw': './functions/quality_assessment_algorithms/calc_dtw.md'
+      - 'calc_sig_sim': './functions/quality_assessment_algorithms/calc_sig_sim.md'
+      - 'perform_beat_detection': './functions/pre_processing_algorithms/perform_beat_detection.md'
+      - 'perform_bpf': './functions/pre_processing_algorithms/perform_bpf.md'
+      - 'perform_med_ibi': './functions/pre_processing_algorithms/perform_med_ibi.md'
+      - 'perform_template_calc': './functions/pre_processing_algorithms/perform_template_calc.md'
+    - 'Tutorials':
+      - 'Summary': './tutorials/summary.md'
+      - 'PPG Quality Assessment': './tutorials/ppg_quality_assessment.md'
+      - 'Creating Documentation': './tutorials/creating_docs.md'
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
