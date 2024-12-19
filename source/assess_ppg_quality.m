@@ -1,4 +1,4 @@
-function [qual, onsets] = assess_ppg_quality(ppg, fs, options)
+function [qual, onsets, win_start_els, win_end_els] = assess_ppg_quality(ppg, fs, options)
 % ASSESS_PPG_QUALITY  Assess quality of a PPG signal.
 %   ASSESS_PPG_QUALITY assesses the quality a photoplethysmogram (PPG) signal
 %   using a specified quality assessment algorithm.
@@ -11,7 +11,7 @@ function [qual, onsets] = assess_ppg_quality(ppg, fs, options)
 %
 %   # Options
 %
-%   * beat_detector : a string specifying the beat detector algorithm to be used (default is MPSTD)
+%   * beat_detector : a string specifying the beat detector algorithm to be used (default is MPSTDfast (v2))
 %    
 %   * quality_metrics  - a string specifying the quality assessment algorithm to be used, or a cell specifying multiple quality assessment algorithms. Options are:
 %    - 'snr' : signal-to-noise ratio (after filtering the signal from 0.5-12 Hz)
@@ -22,10 +22,14 @@ function [qual, onsets] = assess_ppg_quality(ppg, fs, options)
 %    - 'stats_metrics' : statistical metrics
 %    - 'morph_metrics' : pulse wave morphology metrics
 %    - 'spectrum_metrics' : power spectrum metrics
+%
+%   * win_durn : the duration of the windows used to perform PPG signal quality assessment (in secs) (default is 10 secs)
 %   
 %   # Outputs
+%   * qual : quality assessment results (in a structure)
 %   * onsets : indices of pulse onsets
-%   * qual : quality assessment results
+%   * win_start_els : indices of window starts
+%   * win_end_els : indices of window ends
 %   
 %   # Documentation
 %   <https://ppg-quality.readthedocs.io/>
@@ -58,7 +62,7 @@ sig.fs = fs;
 
 %% Pre-process
 
-% perform each required preprocessing step
+% perform each required preprocessing step (these can be conducted without windowing)
 for step_no = 1 : length(up.preprocessing_steps_to_perform.all)
     curr_step = up.preprocessing_steps_to_perform.all{step_no};
     % perform this step
@@ -69,8 +73,6 @@ for step_no = 1 : length(up.preprocessing_steps_to_perform.all)
             sig_beats_bpf = perform_bpf(sig, up.pk_detect_bpf);
         case 'snr_bpf'
             sig_snr_bpf = perform_bpf(sig, up.snr_bpf);
-        case 'med_ibi'
-            med_ibi = perform_med_ibi(beats.mid_amps);
     end
 end
 % output 'onsets' when available
@@ -80,39 +82,180 @@ else
     onsets = [];
 end
 
+%% Window signal
+win_durn_samps = up.settings.win_durn*fs;
+win_sep_els = find_win_sep_els(ppg, beats, win_durn_samps);
+win_start_els = win_sep_els(1:end-1);
+win_end_els = win_sep_els(2:end);
+% add in final window
+if win_end_els(end) < beats.peaks(end)
+    win_end_els(end+1) = beats.peaks(end);
+    win_start_els(end+1) = win_end_els(end)-win_durn_samps;
+    % refine to be at pulse onset
+    [~, idx] = min(abs(beats.onsets-win_start_els(end)));
+    win_start_els(end) = beats.onsets(idx);
+end
+
 %% Calculate signal quality metrics
+
+% - metrics which use windowing
+
+% go through each window
+last_win_beat_no = 0;
+all_beats = 0;
+for win_no = 1 : length(win_start_els)
+    curr_sig_snr_bpf = extract_win_sig(sig_snr_bpf, win_start_els(win_no), win_end_els(win_no));
+    curr_sig = extract_win_sig(sig, win_start_els(win_no), win_end_els(win_no));
+    [curr_beats, win_beat_nos] = extract_win_beats(beats, win_start_els(win_no), win_end_els(win_no));
+    all_beats = all_beats + length(curr_beats.peaks);
+    % create wider signal for template-matching calculations which require signal either side of the window
+    
+    if (win_start_els(win_no)-2*fs)>0 && (win_end_els(win_no)+2*fs)<=length(ppg)
+        curr_wider_sig = extract_win_sig(sig, win_start_els(win_no)-2*fs, win_end_els(win_no)+2*fs);
+        curr_wider_beats = offset_beats(curr_beats, 2*fs);
+    elseif (win_start_els(win_no)-2*fs)>0
+        curr_wider_sig = extract_win_sig(sig, win_start_els(win_no)-2*fs, win_end_els(win_no));
+        curr_wider_beats = offset_beats(curr_beats, 2*fs);
+    elseif (win_end_els(win_no)+2*fs)<=length(ppg)
+        curr_wider_sig = extract_win_sig(sig, win_start_els(win_no), win_end_els(win_no)+2*fs);
+        curr_wider_beats = curr_beats;
+    else
+        curr_wider_sig = curr_sig;
+        curr_wider_beats = curr_beats;
+    end
+    
+    % keep only win beat nos which don't overlap with the previous window (this is only used for the last non-complete window)
+    ref_beat_nos = win_beat_nos(win_beat_nos>last_win_beat_no);
+    curr_med_ibi = perform_med_ibi(curr_beats.mid_amps);
+    
+    % go through each available quality metric
+    for metric_no = 1 : length(up.settings.quality_metrics)
+        curr_metric = up.settings.quality_metrics{metric_no};
+        
+        % calculate this metric
+        switch curr_metric
+                % snr
+            case 'snr'
+                curr_snr = calc_snr(curr_sig_snr_bpf);
+                qual.snr(ref_beat_nos,1) = curr_snr;
+                % statistical measures of quality
+            case 'stats_metrics'
+                [curr_skewness, curr_kurtosis, curr_entropy] = calc_stats_metrics(curr_sig);
+                qual.skewness(ref_beat_nos,1) = curr_skewness;
+                qual.kurtosis(ref_beat_nos,1) = curr_kurtosis;
+                qual.entropy(ref_beat_nos,1) = curr_entropy;
+                % spectral metrics
+            case 'spectrum_metrics'
+                curr_rel_power = calc_spectrum_metrics(curr_sig);
+                qual.rel_power(ref_beat_nos,1) = curr_rel_power;
+                % template matching correlation coefficient
+            case 'tm_cc'
+                curr_tm_cc = calc_tm_cc(curr_wider_sig, curr_wider_beats, curr_med_ibi);
+                qual.tm_cc(ref_beat_nos,1) = curr_tm_cc(end-length(ref_beat_nos)+1:end);
+                % dynamic time warping (currently window but should be pulse wave)
+            case 'dtw'
+                [curr_dtw_ed_on, curr_dtw_dis_on, curr_dtw_ed_pk, curr_dtw_dis_pk] = ...
+                    calc_dtw(curr_wider_sig, curr_wider_beats, curr_med_ibi);
+                qual.dtw_ed_on(ref_beat_nos,1) = curr_dtw_ed_on(end-length(ref_beat_nos)+1:end);
+                qual.dtw_dis_on(ref_beat_nos,1) = curr_dtw_dis_on(end-length(ref_beat_nos)+1:end);
+                qual.dtw_ed_pk(ref_beat_nos,1) = curr_dtw_ed_pk(end-length(ref_beat_nos)+1:end);
+                qual.dtw_dis_pk(ref_beat_nos,1) = curr_dtw_dis_pk(end-length(ref_beat_nos)+1:end);
+        end
+
+    end
+
+    last_win_beat_no = win_beat_nos(end);
+end
+
+% remove overlapping window (which was just used to obtain pulse wave specific metrics)
+win_start_els(end) = [];
+win_end_els(end) = [];
+
+% - metrics calculated for each pulse wave
 
 % go through each available quality metric
 for metric_no = 1 : length(up.settings.quality_metrics)
     curr_metric = up.settings.quality_metrics{metric_no};
+
     % calculate this metric
     switch curr_metric
-        % snr
-        case 'snr'
-            qual.snr = calc_snr(sig_snr_bpf);
-        % ac:dc ratio
+            % amplitude metrics
         case 'amp_metrics'
             [qual.ac_amp, qual.dc_amp, qual.ac_dc_ratio] = calc_amp_metrics(sig_beats_bpf, beats);
-        % signal similarity
+            % signal similarity
         case 'sig_sim'
             qual.sig_sim = calc_sig_sim(sig_beats_bpf, beats);
-        % template matching correlation coefficient
-        case 'tm_cc'
-            qual.tm_cc = calc_tm_cc(sig, beats, med_ibi);
-        % dynamic time warping
-        case 'dtw'
-            [qual.dtw_ed_on, qual.dtw_dis_on, qual.dtw_ed_pk, qual.dtw_dis_pk] = ...
-                calc_dtw(sig, beats, med_ibi);
-        % statistical measures of quality
-        case 'stats_metrics'
-            [qual.skewness, qual.kurtosis, qual.entropy] = calc_stats_metrics(sig);
-        % pulse wave morphology measures of quality
+            % pulse wave morphology measures of quality
         case 'morph_metrics'
-            [qual.zcr, qual.firstderiv_zcr, qual.neg_neg_pk_jump, qual.pos_pos_pk_jump, qual.beat_amp_jump, qual.pulse_durn, qual.med_z_pulse, qual.npeaks_per_pw] = calc_morph_metrics(sig_snr_bpf, beats);
-        % frequency spectrum measures of quality
-        case 'spectrum_metrics'
-            [qual.rel_power] = calc_spectrum_metrics(sig);
+            [qual.n_zc_per_pw, qual.n_firstderiv_zc_per_pw, qual.neg_neg_pk_jump, qual.pos_pos_pk_jump, qual.beat_amp_jump, qual.pulse_durn, qual.med_z_pulse, qual.n_peaks_per_pw] = calc_morph_metrics(sig_snr_bpf, beats);
     end
+
+end
+
+end
+
+function win_sep_els = find_win_sep_els(ppg, beats, win_durn_samps)
+
+% evenly spaced
+win_sep_els = 1:win_durn_samps:length(ppg);
+
+% refined to separate at pulse onsets
+for sep_el_no = 1 : length(win_sep_els)
+    [~, idx] = min(abs(beats.onsets - win_sep_els(sep_el_no)));  % Find the closest onset
+    win_sep_els(sep_el_no) = beats.onsets(idx);
+end
+
+end
+
+function curr_sig = extract_win_sig(sig, win_start_el, win_end_el)
+
+curr_sig.fs = sig.fs;
+
+curr_sig.v = sig.v(win_start_el:win_end_el);
+
+end
+
+function curr_beats = offset_beats(curr_beats, offset)
+
+fid_pts = fieldnames(curr_beats);
+for fid_pt_no = 1 : length(fid_pts)
+    curr_fid_pt = fid_pts{fid_pt_no};
+    curr_beats.(curr_fid_pt) = curr_beats.(curr_fid_pt) + offset;
+end
+
+end
+
+function [curr_beats, win_beat_nos] = extract_win_beats(beats, win_start_el, win_end_el)
+
+% extract beats for this window
+fid_pts = fieldnames(beats);
+for fid_pt_no = 1 : length(fid_pts)
+    curr_fid_pt = fid_pts{fid_pt_no};
+    curr_fid_pt_beats = beats.(curr_fid_pt);
+    if strcmp(curr_fid_pt, 'peaks')
+        win_beat_nos = find(curr_fid_pt_beats>=win_start_el & curr_fid_pt_beats<=win_end_el);
+    end
+    curr_beats.(curr_fid_pt) = curr_fid_pt_beats(win_beat_nos);
+    curr_beats.(curr_fid_pt) = curr_beats.(curr_fid_pt) - win_start_el + 1;
+end
+
+% tidy up - must start with an onset and end with a peak
+if curr_beats.peaks(1) < curr_beats.onsets(1)
+    curr_beats.peaks(1) = [];
+    win_beat_nos(1) = [];
+end
+if curr_beats.onsets(end)> curr_beats.peaks(end)
+    curr_beats.onsets(end) = [];
+end
+if curr_beats.mid_amps(1)<curr_beats.onsets(1)
+    curr_beats.mid_amps(1) = [];
+end
+if curr_beats.mid_amps(end)>curr_beats.peaks(end)
+    curr_beats.mid_amps(end) = [];
+end
+
+if ~isequal(length(curr_beats.onsets), length(curr_beats.peaks), length(curr_beats.mid_amps))
+    error('check this')
 end
 
 end
@@ -122,7 +265,7 @@ function up = setup_up(fs, options)
 %% Analysis settings
 
 % specify settings (as optionally specified in the 'options' input)
-option_vars = {'beat_detector', 'quality_metrics'};
+option_vars = {'beat_detector', 'quality_metrics', 'win_durn'};
 for option_var_no = 1 : length(option_vars)
     curr_option = option_vars{option_var_no};
 
@@ -135,10 +278,12 @@ for option_var_no = 1 : length(option_vars)
         switch curr_option
             % - beat detector
             case 'beat_detector'
-                curr_option_val = 'MSPTD';
+                curr_option_val = 'MSPTDfastv2';
             % - quality assessment algorithm(s)
             case 'quality_metrics'
                 curr_option_val = {'snr', 'amp_metrics', 'sig_sim', 'tm_cc', 'dtw', 'stats_metrics', 'morph_metrics', 'spectrum_metrics'};
+            case 'win_durn'
+                curr_option_val = 10;
         end
     end
     

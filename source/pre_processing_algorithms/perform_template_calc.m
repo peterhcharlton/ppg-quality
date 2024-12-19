@@ -1,4 +1,4 @@
-function [templ, cc, ed, dis] = perform_template_calc(sig, beat_inds, med_ibi, do_distance_measures)% PERFORM_TEMPLATE_CALC  Obtains a template PPG pulse wave.
+function [templ, ccs, eds, diss] = perform_template_calc(sig, beat_inds, med_ibi, do_cc_measures, do_distance_measures)% PERFORM_TEMPLATE_CALC  Obtains a template PPG pulse wave.
 %   PERFORM_TEMPLATE_CALC obtains a template photoplethysmogram (PPG) pulse wave.
 %   
 %   # Inputs
@@ -8,12 +8,13 @@ function [templ, cc, ed, dis] = perform_template_calc(sig, beat_inds, med_ibi, d
 %    - fs : the sampling frequency of the PPG in Hz
 %   * beat_inds : a vector containing indices of PPG beats
 %   * med_ibi : the median inter-beat interval (in samples)
+%   * do_cc_measures : a logical indicating whether or not to calculate the correlation coefficient measures between each pulse wave and the template.
 %   * do_distance_measures : a logical indicating whether or not to calculate the distance measures between each pulse wave and the template.
 %
 %   # Outputs
 %
 %   * templ : a vector containing a template pulse wave (at the original fs)
-%   * cc : mean correlation coefficient between individual pulse waves and the template
+%   * ccs : correlation coefficients between individual pulse waves and the template
 %   * ed : Euclidean distance between individual pulse waves and the template
 %   * dis : Disimilarity between individual pulse waves and the template
 %
@@ -29,49 +30,54 @@ function [templ, cc, ed, dis] = perform_template_calc(sig, beat_inds, med_ibi, d
 %      The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 %      THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+% setup
+if nargin<5
+    do_distance_measures = true;
+end
+if nargin<4
+    do_cc_measures = true;
+end
 
+% cycle through pulse waves
 tol = floor(med_ibi/2);
-no_beats_used = 0;
+beats_used_log = false(length(beat_inds),1);
 all_waves = nan(length(beat_inds),2*tol+1);
 for beat_no = 1 : length(beat_inds)
 
     % don't use this pulse wave if it's right at the beginning or end
     min_el = beat_inds(beat_no)-tol;
     max_el = beat_inds(beat_no)+tol;
-    if min_el < 1 || max_el > beat_inds(end)
+    if min_el < 1 || max_el > length(sig.v)
         continue
     end
 
     % store this pulse wave in a matrix
-    no_beats_used = no_beats_used + 1;
-    all_waves(no_beats_used,:) = sig.v(min_el:max_el);
+    beats_used_log(beat_no) = true;
+    all_waves(beat_no,:) = sig.v(min_el:max_el);
     
 end
 
-% remove any unused rows from matrix
-all_waves(no_beats_used+1:end,:) = [];
-
 % calculate template
-templ = sum(all_waves,1)./no_beats_used;
+templ = sum(all_waves(beats_used_log,:),1)./sum(beats_used_log);
 
-% decide whether to calculate correlation coefficient
-if do_distance_measures
-    cc = nan;
+% decide whether to calculate correlation coefficients
+if do_cc_measures
+    ccs = calc_cc(all_waves, templ);
 else
-    cc = calc_cc(all_waves, templ);
+    ccs = nan;
 end
 
 % decide whether to calculate distance measures
 if do_distance_measures
-    [ed, dis] = calc_dist_measures(all_waves, templ);
+    [eds, diss] = calc_dist_measures(all_waves, templ);
 else
-    ed = nan;
-    dis = nan;
+    eds = nan;
+    diss = nan;
 end
 
 end
 
-function [ed, dis] = calc_dist_measures(all_waves, templ)
+function [eds, diss] = calc_dist_measures(all_waves, templ)
 
 % normalise all waves
 all_waves_norm = nan(size(all_waves));
@@ -84,8 +90,13 @@ end
 templ_norm = norm_0_1(templ);
 
 % calculate euclidean distance
-eds = nan(size(all_waves,1),1);
+[eds, diss] = deal(nan(size(all_waves,1),1));
 for beat_no = 1 : size(all_waves,1)
+    
+    % skip if this pulse wave wasn't used (as it was at an end)
+    if all(isnan(all_waves_norm(beat_no,:)))
+        continue
+    end
     
     % calculate euclidean distance between this pulse wave and the template
     [eds(beat_no), ix, iy] = dtw(all_waves_norm(beat_no,:),templ_norm);
@@ -93,8 +104,6 @@ for beat_no = 1 : size(all_waves,1)
     % calculate dissimilarity measure between this pulse wave and the template
     diss(beat_no) = calc_dis(all_waves_norm(beat_no,ix),templ_norm(iy));
 end
-ed = mean(eds);
-dis = mean(diss);
 
 end
 
@@ -112,7 +121,13 @@ end
 
 function norm_pw = norm_0_1(pw)
 
-norm_pw = (pw-min(pw))/range(pw);
+norm_pw = (pw-min(pw))/calc_range(pw);
+
+end
+
+function range_val = calc_range(pw)
+
+range_val = max(pw)-min(pw);
 
 end
 
@@ -122,7 +137,7 @@ norm_pw = pw/(sum(pw));
 
 end
 
-function cc = calc_cc(all_waves, templ)
+function ccs = calc_cc(all_waves, templ)
 
 % calculate correlation coefficient
 ccs = nan(size(all_waves,1),1);
@@ -133,7 +148,6 @@ for beat_no = 1 : size(all_waves,1)
     ccs(beat_no) = curr_cc(2);
 
 end
-cc = mean(ccs);
 
 end
 

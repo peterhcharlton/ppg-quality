@@ -34,8 +34,8 @@ function [ac_amp, dc_amp, ac_dc_ratio] = calc_amp_metrics(sig, beats)% CALC_AMP_
 %      THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
-ac_amp = median(sig.v(beats.peaks)-sig.v(beats.onsets));
-dc_amp = median((sig.v(beats.mid_amps)));
+ac_amp = sig.v(beats.peaks)-sig.v(beats.onsets);
+dc_amp = sig.v(beats.mid_amps);
 ac_dc_ratio = 100*ac_amp./abs(dc_amp);
 
 end
