@@ -47,7 +47,7 @@ for fid_pt_no = 1 : length(fid_pts)
     beat_inds = beats.(curr_fid_pt);  % selects the relevant field of the 'beats' structure
 
     % calculate template (using fid_pt for alignment) and correlation coefficient
-    [templ, tm_cc, dtw_ed, dtw_dis] = perform_template_calc(sig, beat_inds, med_ibi, true);
+    [templ, tm_cc, dtw_ed, dtw_dis] = perform_template_calc(sig, beat_inds, med_ibi, false, true);
     
     switch curr_fid_pt
         case 'onsets'
