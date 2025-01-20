@@ -294,7 +294,7 @@ end
 
 % check that the quality metric(s) is a cell
 if isstr(up.settings.quality_metrics)
-    up.settings.quality_metrics = {isstr(up.settings.quality_metrics)};
+    up.settings.quality_metrics = {up.settings.quality_metrics};
 end
 
 % identify required pre-processing steps
@@ -328,6 +328,11 @@ for quality_metric_no = 1 : length(up.settings.quality_metrics)
     eval(['up.preprocessing_steps_to_perform.' curr_quality_metric ' = curr_pre_proc_steps;'])
     up.preprocessing_steps_to_perform.all = [up.preprocessing_steps_to_perform.all; curr_pre_proc_steps];
 
+end
+
+% at the moment the code uses beats for everything, so need these steps:
+if ~sum(contains(up.preprocessing_steps_to_perform.all, 'beat_detection'))
+    up.preprocessing_steps_to_perform.all = ['beats_bpf'; 'beat_detection'; up.preprocessing_steps_to_perform.all];
 end
 
 % remove duplicate pre-processing steps
