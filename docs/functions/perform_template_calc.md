@@ -8,12 +8,14 @@
     
 +   med_ibi : the median inter-beat interval (in samples)
     
++   do_cc_measures : a logical indicating whether or not to calculate the correlation coefficient measures between each pulse wave and the template.
+    
 +   do_distance_measures : a logical indicating whether or not to calculate the distance measures between each pulse wave and the template.
     
 ##  Outputs
 +   templ : a vector containing a template pulse wave (at the original fs)
     
-+   cc : mean correlation coefficient between individual pulse waves and the template
++   ccs : correlation coefficients between individual pulse waves and the template
     
 +   ed : Euclidean distance between individual pulse waves and the template
     

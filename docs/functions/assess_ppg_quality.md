@@ -10,7 +10,7 @@ using a specified quality assessment algorithm.
 +   options : a stucture of options (as detailed below)
     
 ##  Options
-+   beat_detector : a string specifying the beat detector algorithm to be used (default is MPSTD)
++   beat_detector : a string specifying the beat detector algorithm to be used (default is MPSTDfast (v2))
     
 +   quality_metrics  - a string specifying the quality assessment algorithm to be used, or a cell specifying multiple quality assessment algorithms. Options are:
     
@@ -23,10 +23,16 @@ using a specified quality assessment algorithm.
      - 'morph_metrics' : pulse wave morphology metrics
      - 'spectrum_metrics' : power spectrum metrics
     
++   win_durn : the duration of the windows used to perform PPG signal quality assessment (in secs) (default is 10 secs)
+    
 ##  Outputs
++   qual : quality assessment results (in a structure)
+    
 +   onsets : indices of pulse onsets
     
-+   qual : quality assessment results
++   win_start_els : indices of window starts
+    
++   win_end_els : indices of window ends
     
 ##  Documentation
 <https://ppg-quality.readthedocs.io/>

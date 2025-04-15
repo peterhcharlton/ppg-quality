@@ -1,5 +1,5 @@
-function sig_sim = calc_sig_sim(sig, beats)% CALC_SIG_SIM  Calculates signal similarity.
-%   CALC_SIG_SIM calculates the signal similarity between consecutive pulse waves.
+function tm_ccs = calc_tm_cc(sig, beats, med_ibi)% CALC_TM_CC  Calculates template-matching correlation coefficient.
+%   CALC_TM_CC  Calculates template-matching correlation coefficient between PPG pulse waves.
 %   
 %   # Inputs
 %   
@@ -7,16 +7,19 @@ function sig_sim = calc_sig_sim(sig, beats)% CALC_SIG_SIM  Calculates signal sim
 %    - v : a vector of signal values
 %    - fs : the sampling frequency in Hz
 %
-%   * beats : a structure containing the indices of beat onsets:
+%   * beats : a structure containing the indices of beat peaks, onsets, and mid-amplitude points:
+%    - peaks : indices of peaks
 %    - onsets : indices of onsets
+%    - mid_amps : indices of mid_amps
+%
+%   * med_ibi : the median inter-beat interval (in samples)
 %
 %   # Outputs
 %   
-%   * sig_sim : the signal similarity 
+%   * tm_ccs : correlation coefficients between individual pulse waves and the template
 %
-%   # Usage
-%   The 'ppg-beats' toolbox can be used to obtain indices of detected beats: <https://ppg-beats.readthedocs.io/>
-%   The 'perform_med_ibi' function can be used to calculate a median inter-beat interval.
+%   # Reference
+%   TBC
 %   
 %   # Documentation
 %   <https://ppg-quality.readthedocs.io/>
@@ -31,22 +34,7 @@ function sig_sim = calc_sig_sim(sig, beats)% CALC_SIG_SIM  Calculates signal sim
 %      THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
-% calculates signal similarity, based on the approach in D.-G. Jang et al., ‘A Simple and Robust Method for Determining the Quality of Cardiovascular Signals Using the Signal Similarity’, in 2018 40th Annual International Conference of the IEEE Engineering in Medicine and Biology Society (EMBC), Jul. 2018, pp. 478–481. doi: 10.1109/EMBC.2018.8512341.
+% calculate template (using mid-pts for alignment) and correlation coefficient
+[templ, tm_ccs, dtw_ed, dtw_dis] = perform_template_calc(sig, beats.mid_amps, med_ibi, true, false);
 
-no_samps = 50;
-sig_sim = nan(length(beats.onsets),1);
-for beat_no = 2 : length(beats.onsets)-1
-    target_pw = sig.v(beats.onsets(beat_no):beats.onsets(beat_no+1));
-    target_pw_resamp = interpolate_pw(target_pw, no_samps);
-    adjacent_pw = sig.v(beats.onsets(beat_no-1):beats.onsets(beat_no));
-    adjacent_pw_resamp = interpolate_pw(adjacent_pw, no_samps);
-    temp = corrcoef(target_pw_resamp, adjacent_pw_resamp);
-    cc = temp(1,2);
-    sig_sim(beat_no) = cc;
-end
-
-end
-
-function pw_resamp = interpolate_pw(pw, no_samps)
-pw_resamp = interp1(1:length(pw), pw, linspace(1,length(pw),no_samps), "spline");
 end
