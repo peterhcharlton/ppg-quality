@@ -75,26 +75,18 @@ for step_no = 1 : length(up.preprocessing_steps_to_perform.all)
             sig_snr_bpf = perform_bpf(sig, up.snr_bpf);
     end
 end
-% output 'onsets' when available
-if exist('beats', 'var')
-    onsets = beats.onsets;
-else
-    onsets = [];
-end
+% % output 'onsets' when available
+% if exist('beats', 'var')
+%     onsets = beats.onsets;
+% else
+%     onsets = [];
+% end
 
 %% Window signal
-win_durn_samps = up.settings.win_durn*fs;
-win_sep_els = find_win_sep_els(ppg, beats, win_durn_samps);
-win_start_els = win_sep_els(1:end-1);
-win_end_els = win_sep_els(2:end);
-% add in final window
-if win_end_els(end) < beats.peaks(end)
-    win_end_els(end+1) = beats.peaks(end);
-    win_start_els(end+1) = win_end_els(end)-win_durn_samps;
-    % refine to be at pulse onset
-    [~, idx] = min(abs(beats.onsets-win_start_els(end)));
-    win_start_els(end) = beats.onsets(idx);
-end
+[win_sep_els, ~] = find_win_sep_els(sig.v, sig.fs, beats, up);
+
+% START HERE: need to adjust code below to use either of these win_sep_els
+% depending on whether beats are required or not.
 
 %% Calculate signal quality metrics
 
@@ -102,30 +94,20 @@ end
 
 % go through each window
 last_win_beat_no = 0;
-all_beats = 0;
-for win_no = 1 : length(win_start_els)
-    curr_sig_snr_bpf = extract_win_sig(sig_snr_bpf, win_start_els(win_no), win_end_els(win_no));
-    curr_sig = extract_win_sig(sig, win_start_els(win_no), win_end_els(win_no));
-    [curr_beats, win_beat_nos] = extract_win_beats(beats, win_start_els(win_no), win_end_els(win_no));
-    all_beats = all_beats + length(curr_beats.peaks);
-    % create wider signal for template-matching calculations which require signal either side of the window
+for win_no = 1 : length(win_sep_els.deb)
+
+    % extract signals and beats of interest for this window
+    curr_sig = extract_win_sig(sig.v, sig.fs, win_sep_els.deb(win_no), win_sep_els.fin(win_no));  % used for stats and spectrum metrics (which use generic windowing)
+    curr_sig_snr_bpf = extract_win_sig(sig_snr_bpf.v, sig_snr_bpf.fs, win_sep_els.deb(win_no), win_sep_els.fin(win_no));  % used for SNR only (which uses generic windowing)
+    [curr_beats, win_beat_nos] = extract_win_beats(beats, win_sep_els.deb(win_no), win_sep_els.fin(win_no));  % used for tm_cc or dtw
     
-    if (win_start_els(win_no)-2*fs)>0 && (win_end_els(win_no)+2*fs)<=length(ppg)
-        curr_wider_sig = extract_win_sig(sig, win_start_els(win_no)-2*fs, win_end_els(win_no)+2*fs);
-        curr_wider_beats = offset_beats(curr_beats, 2*fs);
-    elseif (win_start_els(win_no)-2*fs)>0
-        curr_wider_sig = extract_win_sig(sig, win_start_els(win_no)-2*fs, win_end_els(win_no));
-        curr_wider_beats = offset_beats(curr_beats, 2*fs);
-    elseif (win_end_els(win_no)+2*fs)<=length(ppg)
-        curr_wider_sig = extract_win_sig(sig, win_start_els(win_no), win_end_els(win_no)+2*fs);
-        curr_wider_beats = curr_beats;
-    else
-        curr_wider_sig = curr_sig;
-        curr_wider_beats = curr_beats;
-    end
+    % create wider signal for template-matching calculations which require signal either side of the window
+    [curr_wider_sig, curr_wider_beats] = create_wider_signal(win_sep_els.deb(win_no), win_sep_els.fin(win_no), sig.v, sig.fs, curr_beats);  % used for tm_cc or dtw
     
     % keep only win beat nos which don't overlap with the previous window (this is only used for the last non-complete window)
     ref_beat_nos = win_beat_nos(win_beat_nos>last_win_beat_no);
+
+    % calculate median IBI
     curr_med_ibi = perform_med_ibi(curr_beats.mid_amps);
     
     % go through each available quality metric
@@ -167,10 +149,6 @@ for win_no = 1 : length(win_start_els)
     last_win_beat_no = win_beat_nos(end);
 end
 
-% remove overlapping window (which was just used to obtain pulse wave specific metrics)
-win_start_els(end) = [];
-win_end_els(end) = [];
-
 % - metrics calculated for each pulse wave
 
 % go through each available quality metric
@@ -181,7 +159,7 @@ for metric_no = 1 : length(up.settings.quality_metrics)
     switch curr_metric
             % amplitude metrics
         case 'amp_metrics'
-            [qual.ac_amp, qual.dc_amp, qual.ac_dc_ratio] = calc_amp_metrics(sig_beats_bpf, beats);
+            [qual.ac_amp, qual.dc_amp, qual.ac_dc_ratio] = calc_amp_metrics(sig, beats);
             % signal similarity
         case 'sig_sim'
             qual.sig_sim = calc_sig_sim(sig_beats_bpf, beats);
@@ -192,13 +170,56 @@ for metric_no = 1 : length(up.settings.quality_metrics)
 
 end
 
+win_start_els = win_sep_els.deb;
+win_end_els = win_sep_els.fin;
+onsets = beats.onsets;
+
 end
 
-function win_sep_els = find_win_sep_els(ppg, beats, win_durn_samps)
+function [curr_wider_sig, curr_wider_beats] = create_wider_signal(curr_start_el, curr_end_el, sig, fs, curr_wider_beats)
 
-% evenly spaced
-win_sep_els = 1:win_durn_samps:length(ppg);
+offset_beats_log = false;
+if (curr_start_el-2*fs)>0
+    curr_start_el = curr_start_el-2*fs;
+    offset_beats_log = true;
+end
+if (curr_end_el+2*fs)<=length(sig)
+    curr_end_el = curr_end_el+2*fs;
+end
+curr_wider_sig = extract_win_sig(sig, fs, curr_start_el, curr_end_el);
 
+% offset the beats accordingly if the signal now starts earlier than previously
+if offset_beats_log
+    curr_wider_beats = offset_beats(curr_wider_beats, 2*fs);
+end
+
+end
+
+function [win_sep_els, win_sep_els_beats] = find_win_sep_els(sig, fs, beats, up)
+
+% find window duration in number of samples
+win_durn_samps = round(up.settings.win_durn*fs)+1;
+
+% find win start and finish els
+win_sep_els.deb = 1:win_durn_samps:length(sig);
+win_sep_els.fin = win_sep_els.deb + (win_durn_samps-1);
+
+% find win start and finish els (constrained to pulse onsets)
+win_sep_els_beats.deb = refine_to_nearest_pulse_onsets(win_sep_els.deb, beats);
+win_sep_els_beats.fin = refine_to_nearest_pulse_onsets(win_sep_els.fin, beats);
+
+% add in final window
+if win_sep_els_beats.fin(end) < beats.peaks(end)
+    win_sep_els_beats.fin(end+1) = beats.peaks(end);
+    win_sep_els_beats.deb(end+1) = win_sep_els_beats.fin(end)-win_durn_samps;
+    % refine to be at pulse onset
+    [~, idx] = min(abs(beats.onsets-win_sep_els_beats.deb(end)));
+    win_sep_els_beats.deb(end) = beats.onsets(idx);
+end
+
+end
+
+function win_sep_els = refine_to_nearest_pulse_onsets(win_sep_els, beats)
 % refined to separate at pulse onsets
 for sep_el_no = 1 : length(win_sep_els)
     [~, idx] = min(abs(beats.onsets - win_sep_els(sep_el_no)));  % Find the closest onset
@@ -207,11 +228,11 @@ end
 
 end
 
-function curr_sig = extract_win_sig(sig, win_start_el, win_end_el)
+function curr_sig = extract_win_sig(sig, fs, win_start_el, win_end_el)
 
-curr_sig.fs = sig.fs;
+curr_sig.fs = fs;
 
-curr_sig.v = sig.v(win_start_el:win_end_el);
+curr_sig.v = sig(win_start_el:win_end_el);
 
 end
 
