@@ -2,6 +2,8 @@
 
 **PPG-quality** is a Matlab library of algorithms to assess the quality of photoplethysmogram (*PPG*) signals.
 
+_**This toolbox is currently under development, and is not yet complete. Nor have any checks been conducted.**_
+
 ## Purpose
 This software is designed to provide open-source algorithms for assessing PPG signal quality. The software is intended for use in research, and is therefore aimed at academic researchers.
 
